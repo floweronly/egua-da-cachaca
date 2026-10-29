@@ -1,5 +1,6 @@
 # Gera o APK do app sempre que você enviar uma mudança para o GitHub.
 # O arquivo pronto aparece em "Releases" (lado direito da página do repositório).
+# Os passos de compilação ficam em ci/build.sh, dentro do projeto.zip.
 name: Gerar APK
 
 on:
@@ -23,7 +24,6 @@ jobs:
           unzip -q projeto.zip
           cp -r egua-da-cachaca/. .
           rm -rf egua-da-cachaca
-          ls
 
       - uses: actions/setup-node@v5
         with:
@@ -34,51 +34,7 @@ jobs:
           distribution: temurin
           java-version: '21'
 
-      - name: Instalar dependências
-        run: npm install
-
-      - name: Criar o projeto Android
-        run: npx cap add android
-
-      - name: Aplicar ícones e assinatura
-        run: |
-          cp -r android-res/. android/app/src/main/res/
-          mkdir -p ~/.android
-          cp ci/debug.keystore ~/.android/debug.keystore
-
-      - name: Numerar a versão do app
-        run: |
-          echo '{"v": ${{ github.run_number }}, "api": 1}' > public/version.json
-
-      - name: Colocar o servidor da adega dentro do app
-        run: |
-          PKG=android/app/src/main/java/br/com/eguadacachaca/app
-          mkdir -p "$PKG"
-          cp android-java/*.java "$PKG/"
-          MF=android/app/src/main/AndroidManifest.xml
-          grep -q usesCleartextTraffic "$MF" || sed -i 's/<application/<application android:usesCleartextTraffic="true"/' "$MF"
-          grep -n "usesCleartextTraffic" "$MF"
-          grep -q "android.permission.CAMERA" "$MF" || sed -i 's#<application#<uses-permission android:name="android.permission.CAMERA" />\n    <uses-feature android:name="android.hardware.camera" android:required="false" />\n    <application#' "$MF"
-          sed -n 1,12p "$MF"
-
-      - name: Copiar o app para o Android
-        run: npx cap sync android
-
-      - name: Aceitar licenças do Android SDK
-        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
-
-      - name: Compilar o APK
-        working-directory: android
-        run: ./gradlew assembleDebug --no-daemon
-
-      - name: Publicar o APK em Releases
+      - name: Compilar e publicar o APK
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          cp android/app/build/outputs/apk/debug/app-debug.apk egua-da-cachaca.apk
-          gh release delete apk-atual --yes --cleanup-tag 2>/dev/null || true
-          (cd public && zip -qr ../www.zip .)
-          cp public/version.json version.json
-          gh release create apk-atual egua-da-cachaca.apk www.zip version.json --target "$GITHUB_SHA" \
-            --title "APK mais recente" \
-            --notes "Baixe o arquivo egua-da-cachaca.apk no celular Android e instale."
+        run: bash ci/build.sh
